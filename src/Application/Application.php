@@ -48,7 +48,7 @@ final class Application {
     /**
      * @return array<mixed>
      */
-    private function parseJson(string|false $json): array {
+    private function parseJson(string|false|null $json): array {
         try {
             return Json::decode(
                 is_string($json) ? $json : '{}',
@@ -68,8 +68,8 @@ final class Application {
     public function runRequest(array $request, bool $debug = false): void {
         try {
             $response = $this->processRequest(
-                is_string($request['query']) ? (string) $request['query'] : '',
-                is_array($request['parameters']) ? (array) $request['parameters'] : [],
+                is_string(@$request['query']) ? (string) $request['query'] : '',
+                is_array(@$request['variables']) ? (array) $request['variables'] : [],
                 !$debug,
             );
             if ($debug) {

@@ -20,7 +20,7 @@ use function sprintf;
 /**
  * Class GraphQLiteExtension
  */
-final class GraphQLiteExtension extends CompilerExtension {
+final class GraphQLExtension extends CompilerExtension {
 
     private const TEMP_DIR = 'tempDir';
 
