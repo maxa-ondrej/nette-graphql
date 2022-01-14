@@ -14,7 +14,7 @@ composer require maxa-ondrej/nette-graphql
 ***config.neon***
 ```yml
 extensions:
-    graphql: Maxa\Ondrej\Nette\GraphQL\DI\GraphQLiteExtension
+    graphql: Maxa\Ondrej\Nette\GraphQL\DI\GraphQLExtension
 
 graphql:
     tempDir: %tempDir%
