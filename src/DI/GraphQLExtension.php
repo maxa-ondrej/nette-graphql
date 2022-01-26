@@ -118,6 +118,7 @@ final class GraphQLExtension extends CompilerExtension {
                 $builder
                     ->addDefinition(null)
                     ->setFactory($class);
+                break;
             }
         }
 
