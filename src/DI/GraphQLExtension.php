@@ -6,6 +6,8 @@ use Maxa\Ondrej\Nette\GraphQL\Application\Application;
 use Maxa\Ondrej\Nette\GraphQL\PsrCache\PsrCache;
 use Maxa\Ondrej\Nette\GraphQL\PsrContainer\PsrContainer;
 use Nette\DI\CompilerExtension;
+use Nette\DI\Definitions\ServiceDefinition;
+use Nette\DI\Definitions\Statement;
 use Nette\Loaders\RobotLoader;
 use Nette\Schema\Expect;
 use Nette\Schema\Schema;
@@ -14,6 +16,7 @@ use ReflectionMethod;
 use TheCodingMachine\GraphQLite\Annotations\Mutation;
 use TheCodingMachine\GraphQLite\Annotations\Query;
 use TheCodingMachine\GraphQLite\SchemaFactory;
+use Tracy\Debugger;
 use function count;
 use function sprintf;
 
@@ -22,22 +25,8 @@ use function sprintf;
  */
 final class GraphQLExtension extends CompilerExtension {
 
-    private const TEMP_DIR = 'tempDir';
-
-    private const MAPPING = 'mapping';
-
-    public function getConfigSchema(): Schema {
-        return Expect::structure(
-            [
-                self::TEMP_DIR => Expect::string(),
-                self::MAPPING => Expect::arrayOf(Expect::string(), Expect::string())->required()->min(1.0),
-            ],
-        )->required()->castTo('array');
-    }
-
     public function beforeCompile(): void {
-        /** @var array<string, mixed> $config */
-        $config = $this->getConfig();
+        $global = $this->compiler->getConfig()['parameters'];
         $builder = $this->getContainerBuilder();
 
         $builder
@@ -48,28 +37,28 @@ final class GraphQLExtension extends CompilerExtension {
             ->addDefinition($this->prefix('cache'))
             ->setFactory(PsrCache::class);
 
-        $schemaFactory = $builder
-            ->addDefinition($this->prefix('schemaFactory'))
-            ->setFactory(SchemaFactory::class);
-
-        $loader = new RobotLoader();
-        $loader->setTempDirectory($config[self::TEMP_DIR]);
-        foreach ($config[self::MAPPING] as $namespace => $dir) {
-            $loader->addDirectory($dir);
-            $schemaFactory
-                ->addSetup('addControllerNamespace', [$namespace])
-                ->addSetup('addTypeNamespace', [$namespace]);
-        }
-
+        $loader = (new RobotLoader())
+            ->setTempDirectory($global['tempDir'])
+            ->addDirectory($global['appDir']);
         $loader->refresh();
+
         /** @var array<class-string<object>,string> $classes */
         $classes = $loader->getIndexedClasses();
-        foreach ($classes as $class => $file) {
-            if ($this->hasQueriesOrMutations($class)) {
-                $builder
-                    ->addDefinition(null)
-                    ->setFactory($class);
-            }
+
+        /** @var string $cls */
+        $cls = array_key_last($classes);
+        $file = array_values(array_reverse($classes))[0];
+        $appNamespace = self::getAppNamespace($cls, $file, $global['appDir']);
+
+        $schemaFactory = $builder
+            ->addDefinition($this->prefix('schemaFactory'))
+            ->setFactory(SchemaFactory::class)
+            ->addSetup('addControllerNamespace', [$appNamespace])
+            ->addSetup('addTypeNamespace', [$appNamespace])
+            ->addSetup(Debugger::$productionMode ? 'prodMode' : 'devMode');
+
+        foreach (array_keys($classes) as $class) {
+            $this->handleClass($class, $schemaFactory);
         }
 
         $builder
@@ -80,23 +69,62 @@ final class GraphQLExtension extends CompilerExtension {
             ->setFactory(Application::class);
     }
 
+    public static function getAppNamespace(string $cls, string $file, string $appDir): string {
+        $relative = str_replace([$appDir, '.php', '/'], ['', '', '\\'], $file);
+        return str_replace($relative, '', $cls);
+    }
+
     /**
-     * @param class-string<object> $reflectionClass
+     * @param class-string<object> $class
      */
-    private function hasQueriesOrMutations(string $reflectionClass): bool {
-        $reflection = new ReflectionClass($reflectionClass);
+    private function handleClass(string $class, ServiceDefinition $schemaFactory): void {
+        $reflection = new ReflectionClass($class);
+        $builder = $this->getContainerBuilder();
 
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $refMethod) {
-            if (count($refMethod->getAttributes(Query::class)) > 0) {
-                return true;
-            }
+        if (self::hasAttribute($reflection, Authentication::class)) {
+            $service = $this->prefix('authentication');
+            $builder->addDefinition($service)->setFactory($class);
+            $schemaFactory->addSetup('setAuthenticationService', ["@$service"]);
+        }
 
-            if (count($refMethod->getAttributes(Mutation::class)) > 0) {
-                return true;
+        if (self::hasAttribute($reflection, Authorization::class)) {
+            $service = $this->prefix('authorization');
+            $builder->addDefinition($service)->setFactory($class);
+            $schemaFactory->addSetup('setAuthorizationService', ["@$service"]);
+        }
+
+        if (self::hasAttribute($reflection, Middleware::class)) {
+            $attribute = $reflection->getAttributes(Middleware::class)[0]->newInstance();
+            assert($attribute instanceof Middleware);
+            $builder->addDefinition(null)->setFactory($class);
+            switch ($attribute->type) {
+                case Middleware::FIELD:
+                    $schemaFactory->addSetup('addFieldMiddleware', ["@$class"]);
+                    break;
+                case Middleware::PARAMETER:
+                    $schemaFactory->addSetup('addParameterMiddleware', ["@$class"]);
             }
         }
 
-        return false;
+        if (self::hasAttribute($reflection, FactoryDecorator::class)) {
+            $builder->addDefinition(null)->setFactory($class);
+            $schemaFactory->addSetup("@$class::decorate", [
+                new Statement(SchemaFactory::class),
+            ]);
+        }
+
+        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $refMethod) {
+            if (self::hasAttribute($refMethod, Query::class) || self::hasAttribute($refMethod, Mutation::class)) {
+                $builder
+                    ->addDefinition(null)
+                    ->setFactory($class);
+            }
+        }
+
+    }
+
+    public static function hasAttribute(ReflectionClass|ReflectionMethod $reflection, string $attribute): bool {
+        return count($reflection->getAttributes($attribute)) > 0;
     }
 
 }

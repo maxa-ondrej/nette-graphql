@@ -15,11 +15,6 @@ composer require maxa-ondrej/nette-graphql
 ```yml
 extensions:
     graphql: Maxa\Ondrej\Nette\GraphQL\DI\GraphQLExtension
-
-graphql:
-    tempDir: %tempDir%
-    mapping:
-        App\Presenters: %appDir%/Presenters
 ```
 
 ***MyPresenter.php***
@@ -52,6 +47,16 @@ final class MyPresenter {
     
 }
 ```
+
+### Want to modify the Schema Factory instance?
+Use the already predefined class attributes:
+* `#[Authentication]` -> class must implement `TheCodingMachine\GraphQLite\Security\AuthenticationServiceInterface`
+* `#[Authorization]` -> class must implement `TheCodingMachine\GraphQLite\Security\AuthorizationServiceInterface`
+* `#[Middleware(Middleware::FIELD)]` -> class must implement `TheCodingMachine\GraphQLite\Middlewares\FieldMiddlewareInterface`
+* `#[Middleware(Middleware::PARAMETER)]` -> class must implement `TheCodingMachine\GraphQLite\Middlewares\ParameterMiddlewareInterface`
+
+Or use a custom implementation of `Maxa\Ondrej\Nette\GraphQL\DI\SchemaFactoryDecoratorService` and add class attribute `#[FactoryDecorator]`.
+
 
 ***GraphQLite documentation***
 - [Queries](https://graphqlite.thecodingmachine.io/docs/queries)

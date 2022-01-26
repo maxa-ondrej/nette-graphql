@@ -2,17 +2,19 @@
 
 namespace Maxa\Ondrej\Nette\GraphQL\Application;
 
+use GraphQL\Error\ClientAware;
 use GraphQL\Error\DebugFlag;
 use GraphQL\Error\Error;
 use GraphQL\GraphQL;
 use GraphQL\Type\Schema;
 use JetBrains\PhpStorm\NoReturn;
+use JetBrains\PhpStorm\Pure;
 use Maxa\Ondrej\Nette\GraphQL\Tracy\GraphQLPanel;
 use Nette\Utils\Json;
 use Nette\Utils\JsonException;
 use TheCodingMachine\GraphQLite\Exceptions\GraphQLExceptionInterface;
+use Throwable;
 use Tracy\Debugger;
-use function array_key_exists;
 use function array_map;
 use function assert;
 use function dumpe;
@@ -66,6 +68,10 @@ final class Application {
      */
     #[NoReturn]
     public function runRequest(array $request, bool $debug = false): void {
+        if ($debug && Debugger::$productionMode) {
+            echo '<h1>Do not debug this application in production mode!</h1>';
+            return;
+        }
         try {
             $response = $this->processRequest(
                 is_string(@$request['query']) ? (string) $request['query'] : '',
@@ -77,14 +83,19 @@ final class Application {
                 dumpe($response);
             }
 
-            $this->sendJson($response, array_key_exists('errors', $response) ? 500 : 200);
-        } catch (GraphQLExceptionInterface $exception) {
-            $screen = Debugger::getBlueScreen();
-            $screen->addPanel(static fn () => [
-                'tab' => 'Error',
-                'panel' => Debugger::dump($exception, true),
-            ]);
-            $screen->render($exception);
+            header('Content-Type: application/json');
+            echo json_encode($response);
+        } catch (ClientAware $exception) {
+            Debugger::getBlueScreen()
+                ->addPanel(fn () => [
+                    'tab' => 'Error',
+                    'panel' => Debugger::dump($exception, true),
+                ])
+                ->addPanel(fn () => [
+                    'tab' => 'Schema',
+                    'panel' => Debugger::dump($this->schema, true),
+                ])
+                ->render($exception);
         }
     }
 
@@ -100,35 +111,33 @@ final class Application {
      */
     public function processRequest(string $query, array $variables, bool $catchExceptions): array {
         return GraphQL::executeQuery($this->schema, $query, null, null, $variables)
-            ->setErrorsHandler(self::getErrorsHandler())
+            ->setErrorsHandler(fn(array $errors, callable $formatter) => self::handleErrors($errors, $formatter))
             ->toArray($catchExceptions ? DebugFlag::NONE : DebugFlag::RETHROW_INTERNAL_EXCEPTIONS);
     }
 
-    private static function getErrorsHandler(): callable {
-        return static function (array $errors, callable $formatter): array {
-            if (Debugger::$productionMode) {
-                foreach ($errors as $error) {
-                    assert($error instanceof Error);
-                    Debugger::log(
-                        is_object($error->getPrevious()) ? $error->getPrevious() : $error,
-                        'GraphQLite',
-                    );
-                }
+    private static function handleErrors(array $errors, callable $formatter): array {
+        if (Debugger::$productionMode) {
+            foreach ($errors as $error) {
+                assert($error instanceof Error);
+                Debugger::log(
+                    is_object($error->getPrevious()) ? $error->getPrevious() : $error,
+                    'GraphQLite',
+                );
             }
+        }
 
-            return array_map($formatter, $errors);
-        };
+        $error = self::findError($errors[0]);
+        http_response_code($error instanceof ClientAware ? ($error->getCode() ?: 400) : 500);
+        return array_map($formatter, $errors);
     }
 
     /**
-     * @param array<mixed> $json
+     * @param Error $error
+     * @return Throwable
      */
-    #[NoReturn]
-    public function sendJson(array $json, int $code): void {
-        header('Content-Type: application/json');
-        http_response_code($code);
-        echo json_encode($json);
-        exit;
+    #[Pure]
+    private static function findError(Error $error): Throwable {
+        return is_object($exception = $error->getPrevious()) ? $exception : $error;
     }
 
 }

@@ -8,6 +8,11 @@
             "Maxa\\Ondrej\\Nette\\GraphQL\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/app/"
+        }
+    },
     "require": {
         "php": ">=8.0",
         "contributte/cache": "^v0.6.0",
@@ -33,7 +38,10 @@
     "config": {
         "optimize-autoloader": true,
         "preferred-install": "dist",
-        "sort-packages": true
+        "sort-packages": true,
+        "platform": {
+            "php": "8.1.1"
+        }
     },
     "extra": {
         "enable-patching": true
