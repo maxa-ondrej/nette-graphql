@@ -8,12 +8,10 @@ use GraphQL\Error\Error;
 use GraphQL\GraphQL;
 use GraphQL\Type\Schema;
 use JetBrains\PhpStorm\NoReturn;
-use JetBrains\PhpStorm\Pure;
 use Maxa\Ondrej\Nette\GraphQL\Tracy\GraphQLPanel;
 use Nette\Utils\Json;
 use Nette\Utils\JsonException;
 use TheCodingMachine\GraphQLite\Exceptions\GraphQLExceptionInterface;
-use Throwable;
 use Tracy\Debugger;
 use function array_map;
 use function assert;
@@ -110,34 +108,30 @@ final class Application {
      * @throws GraphQLExceptionInterface only when rethrowing
      */
     public function processRequest(string $query, array $variables, bool $catchExceptions): array {
+        $debugResponse = DebugFlag::INCLUDE_DEBUG_MESSAGE | DebugFlag::INCLUDE_TRACE;
+
         return GraphQL::executeQuery($this->schema, $query, null, null, $variables)
             ->setErrorsHandler(fn(array $errors, callable $formatter) => self::handleErrors($errors, $formatter))
-            ->toArray($catchExceptions ? DebugFlag::NONE : DebugFlag::RETHROW_INTERNAL_EXCEPTIONS);
-    }
-
-    private static function handleErrors(array $errors, callable $formatter): array {
-        if (Debugger::$productionMode) {
-            foreach ($errors as $error) {
-                assert($error instanceof Error);
-                Debugger::log(
-                    is_object($error->getPrevious()) ? $error->getPrevious() : $error,
-                    'GraphQLite',
-                );
-            }
-        }
-
-        $error = self::findError($errors[0]);
-        http_response_code($error instanceof ClientAware ? ($error->getCode() ?: 400) : 500);
-        return array_map($formatter, $errors);
+            ->toArray($catchExceptions ? (Debugger::$productionMode ? DebugFlag::NONE : $debugResponse) : DebugFlag::RETHROW_INTERNAL_EXCEPTIONS);
     }
 
     /**
-     * @param Error $error
-     * @return Throwable
+     * @param array<Error> $errors
+     * @param callable $formatter
+     * @return array
      */
-    #[Pure]
-    private static function findError(Error $error): Throwable {
-        return is_object($exception = $error->getPrevious()) ? $exception : $error;
+    private static function handleErrors(array $errors, callable $formatter): array {
+        foreach ($errors as $error) {
+            assert($error instanceof Error);
+            Debugger::log(
+                is_object($error->getPrevious()) ? $error->getPrevious() : $error,
+                'GraphQLite',
+            );
+        }
+
+        $error = $errors[0]->getPrevious() ?? $errors[0];
+        http_response_code($error instanceof ClientAware ? ($error->getCode() ?: 400) : 500);
+        return array_map($formatter, $errors);
     }
 
 }
