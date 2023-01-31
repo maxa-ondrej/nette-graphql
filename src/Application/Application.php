@@ -110,9 +110,30 @@ final class Application {
     public function processRequest(string $query, array $variables, bool $catchExceptions): array {
         $debugResponse = DebugFlag::INCLUDE_DEBUG_MESSAGE | DebugFlag::INCLUDE_TRACE;
 
-        return GraphQL::executeQuery($this->schema, $query, null, null, $variables)
-            ->setErrorsHandler(fn(array $errors, callable $formatter) => self::handleErrors($errors, $formatter))
-            ->toArray($catchExceptions ? (Debugger::$productionMode ? DebugFlag::NONE : $debugResponse) : DebugFlag::RETHROW_INTERNAL_EXCEPTIONS);
+        try {
+            return GraphQL::executeQuery($this->schema, $query, null, null, $variables)
+            ->setErrorsHandler(
+                static fn (array $errors, callable $formatter) => self::handleErrors($errors, $formatter)
+            )
+            ->toArray(
+                $catchExceptions ? (Debugger::$productionMode ? DebugFlag::NONE : $debugResponse) : DebugFlag::RETHROW_INTERNAL_EXCEPTIONS,
+            );
+        } catch (Throwable $exception) {
+            if ($catchExceptions) {
+                return [
+                    'errors' => [
+                        [
+                            'message' => $exception->getMessage(),
+                            'extensions' => [
+                                'category' => 'graphql',
+                            ],
+                        ],
+                    ],
+                ];
+            }
+
+            throw $exception;
+        }
     }
 
     /**
