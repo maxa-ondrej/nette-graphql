@@ -12,6 +12,7 @@ use Maxa\Ondrej\Nette\GraphQL\Tracy\GraphQLPanel;
 use Nette\Utils\Json;
 use Nette\Utils\JsonException;
 use TheCodingMachine\GraphQLite\Exceptions\GraphQLExceptionInterface;
+use Throwable;
 use Tracy\Debugger;
 use function array_map;
 use function assert;
@@ -28,7 +29,16 @@ use const INPUT_GET;
 
 final class Application {
 
+    private const PANEL_ID = 'GraphQL';
+
+    private GraphQLPanel $panel;
+
     public function __construct(private Schema $schema) {
+        $this->panel = new GraphQLPanel($this->schema, [], []);
+    }
+
+    public function setup(): void {
+        Debugger::getBar()->addPanel($this->panel, self::PANEL_ID);
     }
 
     /**
@@ -68,8 +78,10 @@ final class Application {
     public function runRequest(array $request, bool $debug = false): void {
         if ($debug && Debugger::$productionMode) {
             echo '<h1>Do not debug this application in production mode!</h1>';
+
             return;
         }
+
         try {
             $response = $this->processRequest(
                 is_string(@$request['query']) ? (string) $request['query'] : '',
@@ -77,15 +89,17 @@ final class Application {
                 !$debug,
             );
             if ($debug) {
-                Debugger::getBar()->addPanel(new GraphQLPanel($this->schema, $request, $response));
+                $this->panel->request = $request;
+                $this->panel->response = $response;
+                Debugger::getBar()->addPanel($this->panel, self::PANEL_ID);
                 dumpe($response);
             }
 
             header('Content-Type: application/json');
             echo json_encode($response);
-        } catch (ClientAware $exception) {
+        } catch (ClientAware | Throwable $exception) {
             Debugger::getBlueScreen()
-                ->addPanel(fn () => [
+                ->addPanel(static fn () => [
                     'tab' => 'Error',
                     'panel' => Debugger::dump($exception, true),
                 ])
@@ -138,7 +152,6 @@ final class Application {
 
     /**
      * @param array<Error> $errors
-     * @param callable $formatter
      * @return array
      */
     private static function handleErrors(array $errors, callable $formatter): array {
@@ -151,7 +164,8 @@ final class Application {
         }
 
         $error = $errors[0]->getPrevious() ?? $errors[0];
-        http_response_code($error instanceof ClientAware ? ($error->getCode() ?: 400) : 500);
+        http_response_code($error !== null ? ($error->getCode() ?: 400) : 500);
+
         return array_map($formatter, $errors);
     }
 

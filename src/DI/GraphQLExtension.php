@@ -9,16 +9,21 @@ use Nette\DI\CompilerExtension;
 use Nette\DI\Definitions\ServiceDefinition;
 use Nette\DI\Definitions\Statement;
 use Nette\Loaders\RobotLoader;
-use Nette\Schema\Expect;
-use Nette\Schema\Schema;
 use ReflectionClass;
 use ReflectionMethod;
 use TheCodingMachine\GraphQLite\Annotations\Mutation;
 use TheCodingMachine\GraphQLite\Annotations\Query;
 use TheCodingMachine\GraphQLite\SchemaFactory;
 use Tracy\Debugger;
+use function array_key_last;
+use function array_keys;
+use function array_reverse;
+use function array_values;
+use function assert;
 use function count;
+use function is_string;
 use function sprintf;
+use function str_replace;
 
 /**
  * Class GraphQLiteExtension
@@ -45,8 +50,8 @@ final class GraphQLExtension extends CompilerExtension {
         /** @var array<class-string<object>,string> $classes */
         $classes = $loader->getIndexedClasses();
 
-        /** @var string $cls */
         $cls = array_key_last($classes);
+        assert(is_string($cls));
         $file = array_values(array_reverse($classes))[0];
         $appNamespace = self::getAppNamespace($cls, $file, $global['appDir']);
 
@@ -67,10 +72,12 @@ final class GraphQLExtension extends CompilerExtension {
 
         $builder->addDefinition($this->prefix('application'))
             ->setFactory(Application::class);
+        $this->initialization->addBody('$this->getService(?)->setup();', [$this->prefix('application')]);
     }
 
     public static function getAppNamespace(string $cls, string $file, string $appDir): string {
         $relative = str_replace([$appDir, '.php', '/'], ['', '', '\\'], $file);
+
         return str_replace($relative, '', $cls);
     }
 
@@ -100,6 +107,7 @@ final class GraphQLExtension extends CompilerExtension {
             switch ($attribute->type) {
                 case Middleware::FIELD:
                     $schemaFactory->addSetup('addFieldMiddleware', ["@$class"]);
+
                     break;
                 case Middleware::PARAMETER:
                     $schemaFactory->addSetup('addParameterMiddleware', ["@$class"]);
@@ -118,10 +126,10 @@ final class GraphQLExtension extends CompilerExtension {
                 $builder
                     ->addDefinition(null)
                     ->setFactory($class);
+
                 break;
             }
         }
-
     }
 
     public static function hasAttribute(ReflectionClass|ReflectionMethod $reflection, string $attribute): bool {

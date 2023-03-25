@@ -14,7 +14,7 @@ final class GraphQLPanel implements IBarPanel {
      * @param array<string, string|array<string, string>> $request GraphQL Request
      * @param array<string, array<mixed>> $response GraphQL Response
      */
-    public function __construct(private Schema $schema, private array $request, private array $response) {
+    public function __construct(public Schema $schema, public array $request, public array $response) {
     }
 
     public function getTab(): string {
@@ -30,14 +30,18 @@ final class GraphQLPanel implements IBarPanel {
         $request_div = Html::el('div', [
             'style' => 'margin-bottom: 10px;',
         ]);
-        $request_div->addHtml('<b>Request</b>');
-        $request_div->addHtml(Debugger::dump($this->request, true));
-        $content->addHtml($request_div);
+        if (!empty($this->request)) {
+            $request_div->addHtml('<b>Request</b>');
+            $request_div->addHtml(Debugger::dump($this->request, true));
+            $content->addHtml($request_div);
+        }
 
-        $response_div = Html::el('div');
-        $response_div->addHtml('<b>Response</b>');
-        $response_div->addHtml(Debugger::dump($this->response, true));
-        $content->addHtml($response_div);
+        if (!empty($this->response)) {
+            $response_div = Html::el('div');
+            $response_div->addHtml('<b>Response</b>');
+            $response_div->addHtml(Debugger::dump($this->response, true));
+            $content->addHtml($response_div);
+        }
 
         $schema_div = Html::el('div');
         $schema_div->addHtml('<b>Schema</b>');
