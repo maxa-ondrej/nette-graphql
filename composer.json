@@ -14,12 +14,12 @@
         }
     },
     "require": {
-        "php": ">=8.0",
+        "php": "^8.0",
         "contributte/cache": "^v0.6.0",
         "contributte/di": "^0.5.0",
         "psr/cache": "^1.0",
         "psr/container": "^1.0",
-        "thecodingmachine/graphqlite": "^v6.0.0"
+        "thecodingmachine/graphqlite": "^v5.0.0"
     },
     "require-dev": {
         "ninjify/nunjuck": "^0.4",
