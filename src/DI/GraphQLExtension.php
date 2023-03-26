@@ -72,7 +72,6 @@ final class GraphQLExtension extends CompilerExtension {
 
         $builder->addDefinition($this->prefix('application'))
             ->setFactory(Application::class);
-        $this->initialization->addBody('$this->getService(?)->setup();', [$this->prefix('application')]);
     }
 
     public static function getAppNamespace(string $cls, string $file, string $appDir): string {
